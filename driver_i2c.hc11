@@ -1,0 +1,151 @@
+*******************************************************************************
+*       I2C Driver for the IMU
+*       Thomas Fuller
+*       November 2024
+*       This program uses PORTC pins 0 and 1 as SDA and SCL respectively
+*       DDRC 0 = INPUT, DDRC 1 = OUTPUT
+*******************************************************************************
+
+
+        .equ        portd,          0x1008          ; port c data address
+        .equ        ddrd,           0x1009          ; data direction register c
+        .equ        gyro_addr,      0b11010011      ; read address for the gyro, 
+        .equ        gyro_write,     0b11010000      ; i think? 
+        .equ        gyro_nack,      0b11110000
+        .equ        bmp085,         0b11101110      ; bmp085 address
+
+        ; OR these to turn that bit off
+        .equ        sda,            0b00010000            ; 
+        .equ        scl,            0b00100000
+
+        ; AND these to turn that bit off
+        .equ        sdam,           0xEF            ; inverted bitmask for SDA           
+        .equ        sclm,           0xDF            ; inverted bitmask for SCL
+
+
+        ; testing if my method works at all
+        .equ        i2cstore,       0x2000          ; where I want to keep my i2c data
+        .equ        i2ctest,        0x2004
+        ; we can run our code with portd
+
+.org    0x3000
+
+
+; start condition
+; send address
+; read ack/nack
+; read data
+; stop condition
+
+
+; get the port to a known state
+
+;init:
+;    ldaa    #sdam
+;    anda    ddrd
+;    staa    ddrd
+;
+;    ldaa    #sclm
+;    anda    ddrd
+;    staa    ddrd
+****************************************************
+* DDRD has to be set to input to begin
+****************************************************
+; my hopes is that this sets both lines high, which i see at least both lines are high
+init:
+     ldaa    #0x07
+     staa    ddrd
+
+; Even though DDRD is what we actually change, we are manipulating output of PORTC actual.
+; Thus, we put a 1 in DDRD, to make PORTC a zero
+; SDA low while SCL is high means DDRD = 1
+start_condition:
+    ldaa    #sda
+    oraa    ddrd
+    staa    ddrd
+
+
+
+
+; dont you just wish there were functions?
+; in reality this runs forever, but idk why
+; be careful we don't touch B
+send_byte_init:
+    ldx     #0x08           ; send 8 bits
+    ldab    #gyro_write
+send_byte_loop:
+    ; put the clock low = set ddrd high
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+    rolb                                            ; look at the msb
+    bcs     set_sda                                 ; branch depending on its value
+    bcc     clear_sda
+
+    set_sda:                                      ; ddrd has to be HIGH
+        ldaa    #sdam
+        anda    ddrd
+        staa    ddrd
+        bra     next_bit
+    clear_sda:                                      ; ddrd has to be LOW
+        ldaa    #sda
+        oraa    ddrd
+        staa    ddrd
+        bra     next_bit
+
+    next_bit:
+        ; clock needs to go high now, ddrd is LOW
+        ldaa    #sclm
+        anda    ddrd
+        staa    ddrd
+
+        dex
+        bne     send_byte_loop
+
+; read operation for ack/nack
+ack_nack:
+    
+    ; clock low once more = ddrd high
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+    ; sda has to be an input.  Data is allowed to change only when the clock is low.  
+    ; so once the clock goes low that gives our main and secondaries the chance to do their work
+    ldaa    #sdam
+    anda    ddrd
+    staa    ddrd
+    
+    nop             ; just give it some time
+    nop
+
+    ; clock high = ddrd low
+    ldaa    #sclm
+    anda    ddrd
+    staa    ddrd
+
+swi
+      
+stop_condition:
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+    
+swi
+
+;read port is known to work in a small test
+read_port:
+    ldaa    portd
+    ldx     #0x05 
+
+    shift_left:                                     ; shift the data into C
+        lsra
+        dex                                         ; decrement x
+        bne     shift_left
+
+    ldaa    i2cstore 
+    rola 
+    staa    i2cstore 
+
+swi                                                 ; end program
