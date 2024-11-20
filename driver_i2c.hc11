@@ -6,7 +6,6 @@
 *       DDRC 0 = INPUT, DDRC 1 = OUTPUT
 *******************************************************************************
 
-
         .equ        portd,          0x1008          ; port c data address
         .equ        ddrd,           0x1009          ; data direction register c
         .equ        send_buffer,    0x2002
@@ -14,7 +13,7 @@
 
 
 
-        .equ        gyro_addr,      0b11010011      ; read address for the gyro, 
+        ;.equ        gyro_write,      0b11010011      ; read address for the gyro, 
         .equ        gyro_write,     0b11010000      ; i think? 
         .equ        gyro_nack,      0b11110000
         .equ        bmp085,         0b11101110      ; bmp085 address
@@ -31,7 +30,43 @@
         ; testing if my method works at all
         .equ        i2cstore,       0x2000          ; where I want to keep my i2c data
         .equ        i2ctest,        0x2004
-        ; we can run our code with portd
+
+.org    0x2950
+
+
+sb: 
+    ldx     #0x08           ; send 8 bits
+    ldab    send_buffer
+send_byte_loop:
+    ; put the clock low = set ddrd high
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+    rolb                                            ; look at the msb
+    bcs     set_sda                                 ; branch depending on its value
+    bcc     clear_sda
+
+    set_sda:                                      ; ddrd has to be HIGH
+        ldaa    #sdam
+        anda    ddrd
+        staa    ddrd
+        bra     next_bit
+    clear_sda:                                      ; ddrd has to be LOW to set the bit on SDA
+        ldaa    #sda
+        oraa    ddrd
+        staa    ddrd
+        bra     next_bit
+
+    next_bit:
+        ; clock needs to go high now, ddrd is LOW
+        ldaa    #sclm
+        anda    ddrd
+        staa    ddrd
+
+        dex
+        bne     send_byte_loop
+    rts
 
 .org    0x3000
 
@@ -80,41 +115,11 @@ start_condition:
     ldaa    #gyro_write
     staa    send_buffer
 
+    jsr     0x2950 
+
 ; dont you just wish there were functions?
 ; in reality this runs forever, but idk why
 ; be careful we don't touch B
-send_byte_init:
-    ldx     #0x08           ; send 8 bits
-    ldab    send_buffer
-send_byte_loop:
-    ; put the clock low = set ddrd high
-    ldaa    #scl
-    oraa    ddrd
-    staa    ddrd
-
-    rolb                                            ; look at the msb
-    bcs     set_sda                                 ; branch depending on its value
-    bcc     clear_sda
-
-    set_sda:                                      ; ddrd has to be HIGH
-        ldaa    #sdam
-        anda    ddrd
-        staa    ddrd
-        bra     next_bit
-    clear_sda:                                      ; ddrd has to be LOW to set the bit on SDA
-        ldaa    #sda
-        oraa    ddrd
-        staa    ddrd
-        bra     next_bit
-
-    next_bit:
-        ; clock needs to go high now, ddrd is LOW
-        ldaa    #sclm
-        anda    ddrd
-        staa    ddrd
-
-        dex
-        bne     send_byte_loop
 
 ; read operation for ack/nack
 ack_nack:
@@ -186,3 +191,4 @@ read_port:
     staa    i2cstore 
 
 swi                                                 ; end program
+
