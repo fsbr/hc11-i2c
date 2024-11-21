@@ -1,0 +1,249 @@
+*******************************************************************************
+*       I2C Driver for the IMU
+*       November 2024
+*       This program uses PORTC pins 0 and 1 as SDA and SCL respectively
+*       DDRC 0 = INPUT, DDRC 1 = OUTPUT
+*******************************************************************************
+portd       EQU         $1008          ; port d data address
+ddrd        EQU         $1009          ; data direction register d
+send_buffer EQU         $2002
+rcv_buffer  EQU         $2006
+rcv_flag    EQU         $2007          ; if 0 = send, if 1 receive
+acknack     EQU         $2008          ; where we will save the acknack
+
+
+
+gyro_write  EQU         %11010000      ; i think? 
+gyro_read   EQU         %11010001      ; i think? 
+gyro_nack   EQU         %11110000
+gyro_whoami EQU         %00000000       ; whoami register 
+bmp085      EQU         %11101110      ; bmp085 address
+
+; OR these to turn that bit off
+sda         EQU        %00010000            ; 
+scl         EQU        %00100000
+
+        ; AND these to turn that bit off
+sdam        EQU        $EF            ; inverted bitmask for SDA           
+sclm        EQU        $DF            ; inverted bitmask for SCL
+
+
+        ; testing if my method works at all
+i2cstore    EQU        $2000          ; where I want to keep my i2c data
+i2ctest     EQU        $2004
+
+    ORG    $2400
+sb: 
+    ldx     #$08           ; send 8 bits
+    ldab    send_buffer
+send_byte_loop:
+    ; put the clock low = set ddrd high
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+    rolb                                            ; look at the msb
+
+    bcs     set_sda                                 ; branch depending on its value
+    bcc     clear_sda
+
+set_sda:                                      ; ddrd LOW -> SDA HIGH
+    ldaa    #sdam
+    anda    ddrd
+    staa    ddrd
+    bra     next_bit
+
+clear_sda:                                      ; ddrd HIGH -> SDA LOW
+    ldaa    #sda
+    oraa    ddrd
+    staa    ddrd
+    bra     next_bit
+
+next_bit:    
+    ; clock needs to go high now, ddrd is LOW
+    ldaa    #sclm
+    anda    ddrd
+    staa    ddrd
+
+    dex
+    bne     send_byte_loop
+    rts
+
+rb:
+    ldx     #$08
+
+    ldaa    #sdam   ; release the buss
+    anda    ddrd
+    staa    ddrd
+rb_loop:
+    ldaa    #scl    ; bring the clock low
+    oraa    ddrd
+    staa    ddrd
+
+    ldaa    #sclm   ; bring it high again
+    anda    ddrd
+    staa    ddrd
+    
+    dex
+    bne     send_byte_loop
+    rts
+
+* assumes the clock line is high
+start_condition:
+    ldaa    #sclm
+    anda    ddrd
+    staa    ddrd
+*   if SDA is LOW, make it high
+    ldaa    #sdam
+    anda    ddrd
+    staa    ddrd
+
+*   then lower it
+    ldaa    #sda
+    oraa    ddrd
+    staa    ddrd
+    rts
+
+****************************************************
+* DDRD has to be set to input to begin
+****************************************************
+*init:
+*    ldaa    #$37               ; set ddrd to output -> 1's in SDA and SCL
+*    staa    ddrd
+*    ldaa    #$37               ; actually place 1s on the bus
+*    staa    portd
+*    nop                         ; nops for superstitious reasons
+*    nop
+*    nop
+*    ldaa    #$07
+*    staa    ddrd
+     
+* Even though DDRD is what we actually change, we are manipulating output of PORTD actual.
+* Thus, we put a 1 in DDRD, to make PORTD a zero
+* SDA low while SCL is high means DDRD = 1
+
+
+    ORG     $3000                   ; entry point for i2c driver
+
+*   ldaa    #$00                    ; configure portd as an input
+*   staa    ddrd                    ; store portd configuratoin
+
+    ldaa    #$00                    ; rcv_flag = 0, means we are transmitting
+    staa    rcv_flag                ; rcv_flag = 1, means we are recieving data
+    jsr     start_condition         ; send gyro write
+
+    ldaa    #gyro_write             ; send the gyro write command on the bus
+    staa    send_buffer             
+    jsr     sb                      ; send byte
+    jsr     ack_nack                
+
+*    ldaa    #gyro_whoami            ; RA
+    ldaa    #$1B
+    staa    send_buffer
+    jsr     sb    
+    jsr     ack_nack                ; ACK
+
+    jsr     start_condition         ; S
+
+    ldaa    #$00
+    staa    rcv_flag
+    jsr     start_condition         ; requires SCL to be left high by the previous routine
+    ldaa    #gyro_read              ; ADR + R
+    staa    send_buffer
+    jsr     sb
+    jsr     ack_nack                ;ACK
+
+    jsr     rb                      ; DATA  (for now just want to see data on the bus
+    jsr     ack_nack
+
+
+    jsr     stop_condition
+    
+    swi
+
+* dont you just wish there were functions?
+* in reality this runs forever, but idk why
+* be careful we don't touch B
+
+* read operation for ack/nack
+ack_nack:
+* clock low once more = ddrd high
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+* sda has to be an input.  Data is allowed to change only when the clock is low.  
+* so once the clock goes low that gives our main and secondaries the chance to do their work
+    ldaa    #sdam
+    anda    ddrd
+    staa    ddrd
+    
+    nop             ; just give it some time
+    nop
+
+* clock high = ddrd low
+    ldaa    #sclm
+    anda    ddrd
+    staa    ddrd
+
+* off by one errors
+* clock low once more = ddrd high
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+    rts
+
+* i actually need to read in the nack some how
+
+
+* while the clock is high, address goes high
+* putting SDA high = DDRD LOW
+
+stop_condition:
+* clock low once more = ddrd high (bus control transfers back to M)
+    ldaa    #scl
+    oraa    ddrd
+    staa    ddrd
+
+* you have to think in terms of what is allowed to happen on the bus
+* set SDA HIGH by setting its ddrd bit LOW
+    ldaa    #sda
+    oraa    ddrd
+    staa    ddrd
+
+    
+* clock high = ddrd low
+    ldaa    #sclm
+    anda    ddrd
+    staa    ddrd
+
+    nop
+    nop
+    nop
+
+* set sda to input/high = clear SDA in DDRD
+    ldaa    #sdam
+    anda    ddrd
+    staa    ddrd
+    rts
+
+    
+    swi
+
+*;read port is known to work in a small test
+*read_port:
+*    ldaa    portd
+*    ldx     #$05 
+*
+*    shift_left:                                     ; shift the data into C
+*        lsra
+*        dex                                         ; decrement x
+*        bne     shift_left
+*
+*    ldaa    i2cstore 
+*    rola 
+*    staa    i2cstore 
+*
+*swi                                                 ; end program
+

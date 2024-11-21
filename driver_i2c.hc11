@@ -1,15 +1,16 @@
 *******************************************************************************
 *       I2C Driver for the IMU
-*       Thomas Fuller
 *       November 2024
 *       This program uses PORTC pins 0 and 1 as SDA and SCL respectively
 *       DDRC 0 = INPUT, DDRC 1 = OUTPUT
 *******************************************************************************
-
-        .equ        portd,          0x1008          ; port c data address
-        .equ        ddrd,           0x1009          ; data direction register c
+        .global     sb
+        .global     ack_nack
+        .equ        portd,          0x1008          ; port d data address
+        .equ        ddrd,           0x1009          ; data direction register d
         .equ        send_buffer,    0x2002
         .equ        rcv_buffer,     0x2006
+        .equ        acknack,        0x2008          ; where we will save the acknack
 
 
 
@@ -32,7 +33,6 @@
         .equ        i2ctest,        0x2004
 
 .org    0x2950
-
 
 sb: 
     ldx     #0x08           ; send 8 bits
@@ -70,7 +70,6 @@ send_byte_loop:
 
 .org    0x3000
 
-
 ; start condition
 ; send address
 ; read ack/nack
@@ -78,20 +77,10 @@ send_byte_loop:
 ; stop condition
 
 
-; get the port to a known state
-
-;init:
-;    ldaa    #sdam
-;    anda    ddrd
-;    staa    ddrd
-;
-;    ldaa    #sclm
-;    anda    ddrd
-;    staa    ddrd
 ****************************************************
 * DDRD has to be set to input to begin
 ****************************************************
-; my hopes is that this sets both lines high, which i see at least both lines are high
+
 init:
     ldaa    #0x07               ; set ddrd to output -> 1's in SDA and SCL
     staa    ddrd
@@ -100,6 +89,7 @@ init:
     nop                         ; nops for superstitious reasons
     nop
     nop
+    rts
      
 ; Even though DDRD is what we actually change, we are manipulating output of PORTD actual.
 ; Thus, we put a 1 in DDRD, to make PORTD a zero
@@ -115,7 +105,9 @@ start_condition:
     ldaa    #gyro_write
     staa    send_buffer
 
-    jsr     0x2950 
+    jsr     sb
+    jsr     ack_nack
+    jsr     stop_condition
 
 ; dont you just wish there were functions?
 ; in reality this runs forever, but idk why
@@ -142,6 +134,9 @@ ack_nack:
     ldaa    #sclm
     anda    ddrd
     staa    ddrd
+    rts
+
+; i actually need to read in the nack some how
 
 
 ; swi (uncomment me for something that somewhat works (at least doesnt require power cycling))
@@ -154,6 +149,7 @@ stop_condition:
     staa    ddrd
 
     ; you have to think in terms of what is allowed to happen on the bus
+    ; set SDA HIGH by setting its ddrd bit LOW
     ldaa    #sda
     oraa    ddrd
     staa    ddrd
@@ -172,23 +168,24 @@ stop_condition:
     ldaa    #sdam
     anda    ddrd
     staa    ddrd
+    rts
 
     
 swi
 
-;read port is known to work in a small test
-read_port:
-    ldaa    portd
-    ldx     #0x05 
-
-    shift_left:                                     ; shift the data into C
-        lsra
-        dex                                         ; decrement x
-        bne     shift_left
-
-    ldaa    i2cstore 
-    rola 
-    staa    i2cstore 
-
-swi                                                 ; end program
+;;read port is known to work in a small test
+;read_port:
+;    ldaa    portd
+;    ldx     #0x05 
+;
+;    shift_left:                                     ; shift the data into C
+;        lsra
+;        dex                                         ; decrement x
+;        bne     shift_left
+;
+;    ldaa    i2cstore 
+;    rola 
+;    staa    i2cstore 
+;
+;swi                                                 ; end program
 
