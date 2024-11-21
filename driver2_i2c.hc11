@@ -30,7 +30,6 @@ sclm        EQU        $DF            ; inverted bitmask for SCL
 
         ; testing if my method works at all
 i2cstore    EQU        $2000          ; where I want to keep my i2c data
-i2ctest     EQU        $2004
 
     ORG    $2400
 sb: 
@@ -84,8 +83,10 @@ rb_loop:
     anda    ddrd
     staa    ddrd
     
-    dex
-    bne     send_byte_loop
+    jsr     read_port   ; i am putting it here, because data changes while the clock is low, but 
+    
+    dex                 ; it may need to be in the first rb: routine also
+    bne     rb_loop     ; this was "send_byte_loop", and wasn't working correclty
     rts
 
 * assumes the clock line is high
@@ -128,6 +129,8 @@ start_condition:
 *   ldaa    #$00                    ; configure portd as an input
 *   staa    ddrd                    ; store portd configuratoin
 
+    ldaa    #$00                    ; initialize i2cstore to zero
+    staa    i2cstore                ; ^^
     ldaa    #$00                    ; rcv_flag = 0, means we are transmitting
     staa    rcv_flag                ; rcv_flag = 1, means we are recieving data
     jsr     start_condition         ; send gyro write
@@ -138,15 +141,15 @@ start_condition:
     jsr     ack_nack                
 
 *    ldaa    #gyro_whoami            ; RA
-    ldaa    #$1B
+    ldaa    #$00
     staa    send_buffer
     jsr     sb    
     jsr     ack_nack                ; ACK
 
     jsr     start_condition         ; S
 
-    ldaa    #$00
-    staa    rcv_flag
+    ldaa    #$00                    ; indicate that we sending
+    staa    rcv_flag                ; i'm not sure if this is used right now
     jsr     start_condition         ; requires SCL to be left high by the previous routine
     ldaa    #gyro_read              ; ADR + R
     staa    send_buffer
@@ -232,18 +235,19 @@ stop_condition:
     swi
 
 *;read port is known to work in a small test
-*read_port:
-*    ldaa    portd
-*    ldx     #$05 
-*
-*    shift_left:                                     ; shift the data into C
-*        lsra
-*        dex                                         ; decrement x
-*        bne     shift_left
-*
-*    ldaa    i2cstore 
-*    rola 
-*    staa    i2cstore 
-*
+read_port:
+    ldaa    portd
+    ldy     #$05 
+
+    shift_left:                                     ; shift the data into C
+        lsra
+        dey                                         ; decrement x
+        bne     shift_left
+
+    ldaa    i2cstore 
+    rola 
+    staa    i2cstore 
+    rts
+
 *swi                                                 ; end program
 
