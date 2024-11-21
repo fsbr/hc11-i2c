@@ -141,7 +141,7 @@ start_condition:
     jsr     ack_nack                
 
 *    ldaa    #gyro_whoami            ; RA
-    ldaa    #$00
+    ldaa    #$1C
     staa    send_buffer
     jsr     sb    
     jsr     ack_nack                ; ACK
