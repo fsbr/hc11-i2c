@@ -35,7 +35,7 @@ temp_high   EQU         $2010           ; High byte of temperature
 temp_low    EQU         $2011           ; Low Byte of the temperature
 
 temp_result EQU         $2200           ; (2 bytes) spot for the temperature result
-remainder   EQU         $2202           ; spot for the remainder
+remainder   EQU         $2302           ; spot for the remainder
 tmp         EQU         $2600           ; scratch space for math operations
 
 *******************************************************************************
@@ -190,6 +190,11 @@ main_loop:
     ldaa    i2cstore        ; take the data from the temporary i2cstore
     staa    0, x          ; store the i2c store data in the temp_high locaiton + x
 
+    jsr     $ffbb           ; print the character
+
+    ldaa    #$20
+    jsr     $ffb8           ; print a space
+
     inx                     ; increment x and store it for the next iteration
     stx     $39fe           ; probably we can save a step here but i dont care right now 
 
@@ -202,6 +207,12 @@ main_loop:
     staa    $0f             ; save the current iteration count
     suba    #$08            ; number of iterations to stop after
     bne     main_loop       ; if we aren't at 0 keep going.
+
+    jsr     $ffc4           ; print a carriange return/linefeed
+
+    bra     main_init
+
+
 
     swi
     
