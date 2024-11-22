@@ -1,7 +1,7 @@
 *******************************************************************************
 *       I2C Driver for the IMU
 *       November 2024
-*       This program uses PORTC pins 0 and 1 as SDA and SCL respectively
+*       This program uses PORTD pins 4 and 5 as SDA and SCL respectively
 *       DDRC 0 = INPUT, DDRC 1 = OUTPUT
 *******************************************************************************
 portd       EQU         $1008          ; port d data address
@@ -9,7 +9,7 @@ ddrd        EQU         $1009          ; data direction register d
 send_buffer EQU         $2002
 rcv_buffer  EQU         $2006
 rcv_flag    EQU         $2007          ; if 0 = send, if 1 receive
-acknack     EQU         $2008          ; where we will save the acknack
+register    EQU         $2008          ; where we will save the acknack
 
 
 
@@ -24,20 +24,29 @@ sda         EQU        %00010000            ;
 scl         EQU        %00100000
 
         ; AND these to turn that bit off
-sdam        EQU        $EF            ; inverted bitmask for SDA           
-sclm        EQU        $DF            ; inverted bitmask for SCL
+sdam        EQU        $EF              ; inverted bitmask for SDA           
+sclm        EQU        $DF              ; inverted bitmask for SCL
 
 
         ; testing if my method works at all
-i2cstore    EQU        $2000          ; where I want to keep my i2c data
+i2cstore    EQU        $2000            ; where I want to keep my i2c data
 
+temp_high   EQU         $2010           ; High byte of temperature
+temp_low    EQU         $2011           ; Low Byte of the temperature
+
+temp_result EQU         $2200           ; (2 bytes) spot for the temperature result
+remainder   EQU         $2202           ; spot for the remainder
+tmp         EQU         $2600           ; scratch space for math operations
+
+*******************************************************************************
+*       SEND BYTE SUBROUTINE
+*******************************************************************************
     ORG    $2400
 sb: 
-    ldx     #$08           ; send 8 bits
+    ldx     #$08                                    ; send 8 bits
     ldab    send_buffer
 send_byte_loop:
-    ; put the clock low = set ddrd high
-    ldaa    #scl
+    ldaa    #scl                                    ; put the clock low = set ddrd high
     oraa    ddrd
     staa    ddrd
 
@@ -59,8 +68,7 @@ clear_sda:                                      ; ddrd HIGH -> SDA LOW
     bra     next_bit
 
 next_bit:    
-    ; clock needs to go high now, ddrd is LOW
-    ldaa    #sclm
+    ldaa    #sclm                               ; clock needs to go high now, ddrd is LOW
     anda    ddrd
     staa    ddrd
 
@@ -68,6 +76,9 @@ next_bit:
     bne     send_byte_loop
     rts
 
+*******************************************************************************
+*           READ BYTE SUBROUTINE
+*******************************************************************************
 rb:
     ldx     #$08
 
@@ -89,11 +100,15 @@ rb_loop:
     bne     rb_loop     ; this was "send_byte_loop", and wasn't working correclty
     rts
 
-* assumes the clock line is high
-start_condition:
-    ldaa    #sclm
+
+*******************************************************************************
+*           START CONDITION 
+*******************************************************************************
+start_condition:            
+    ldaa    #sclm                           ; if the clock line is low, make it high
     anda    ddrd
     staa    ddrd
+
 *   if SDA is LOW, make it high
     ldaa    #sdam
     anda    ddrd
@@ -105,30 +120,15 @@ start_condition:
     staa    ddrd
     rts
 
-****************************************************
-* DDRD has to be set to input to begin
-****************************************************
-*init:
-*    ldaa    #$37               ; set ddrd to output -> 1's in SDA and SCL
-*    staa    ddrd
-*    ldaa    #$37               ; actually place 1s on the bus
-*    staa    portd
-*    nop                         ; nops for superstitious reasons
-*    nop
-*    nop
-*    ldaa    #$07
-*    staa    ddrd
      
-* Even though DDRD is what we actually change, we are manipulating output of PORTD actual.
-* Thus, we put a 1 in DDRD, to make PORTD a zero
-* SDA low while SCL is high means DDRD = 1
-
-
+*******************************************************************************
+*       MAIN I2C READ LOOP                                                    *
+*******************************************************************************
     ORG     $3000                   ; entry point for i2c driver
 
 *   ldaa    #$00                    ; configure portd as an input
 *   staa    ddrd                    ; store portd configuratoin
-
+i2cmain:
     ldaa    #$00                    ; initialize i2cstore to zero
     staa    i2cstore                ; ^^
     ldaa    #$00                    ; rcv_flag = 0, means we are transmitting
@@ -140,8 +140,7 @@ start_condition:
     jsr     sb                      ; send byte
     jsr     ack_nack                
 
-*    ldaa    #gyro_whoami            ; RA
-    ldaa    #$1C
+    ldaa    register                    ; Register Address (RA)
     staa    send_buffer
     jsr     sb    
     jsr     ack_nack                ; ACK
@@ -154,24 +153,66 @@ start_condition:
     ldaa    #gyro_read              ; ADR + R
     staa    send_buffer
     jsr     sb
-    jsr     ack_nack                ;ACK
+    jsr     ack_nack                ; ACK
 
     jsr     rb                      ; DATA  (for now just want to see data on the bus
     jsr     ack_nack
 
 
     jsr     stop_condition
+    rts
     
-    swi
+*    swi
+*******************************************************************************
+*       END I2C MAIN LOOP
+*******************************************************************************
 
+*******************************************************************************
+*       ENTRY POINT OF PROGRAM
+*******************************************************************************
+    ORG     $3400
+main_init:
+
+    ldaa    #$00            ; iteration counter starts at 0
+    staa    $0f             ; place to put the iterations remaining
+
+    ldaa    #$1B            ; TEMP_HIGH register address
+    staa    register        ; where we store the register address
+
+    ldx    #temp_result    ; where we want to store the result in the end
+    stx    $39fe
+    
+main_loop:
+    jsr     i2cmain         ; call the i2c driver
+
+    ldx     $39fe          ; load the address
+
+    ldaa    i2cstore        ; take the data from the temporary i2cstore
+    staa    0, x          ; store the i2c store data in the temp_high locaiton + x
+
+    inx                     ; increment x and store it for the next iteration
+    stx     $39fe           ; probably we can save a step here but i dont care right now 
+
+    ldaa    register        ; load the register we are reading into A
+    inca                    ; increment it and store it for next iteration
+    staa    register        
+
+    ldaa    $0f             ; look at the number of iterations
+    inca                    ; add 1
+    staa    $0f             ; save the current iteration count
+    suba    #$08            ; number of iterations to stop after
+    bne     main_loop       ; if we aren't at 0 keep going.
+
+    swi
+    
+    
 * dont you just wish there were functions?
 * in reality this runs forever, but idk why
 * be careful we don't touch B
 
 * read operation for ack/nack
 ack_nack:
-* clock low once more = ddrd high
-    ldaa    #scl
+    ldaa    #scl    ; clock low once more, ddrd HIGH
     oraa    ddrd
     staa    ddrd
 
@@ -216,17 +257,15 @@ stop_condition:
     staa    ddrd
 
     
-* clock high = ddrd low
-    ldaa    #sclm
+    ldaa    #sclm               ; clock high = ddrd low
     anda    ddrd
     staa    ddrd
 
-    nop
+    nop                         ; here for superstitious reasons
     nop
     nop
 
-* set sda to input/high = clear SDA in DDRD
-    ldaa    #sdam
+    ldaa    #sdam               ; set sda to input/high = clear SDA in DDRD
     anda    ddrd
     staa    ddrd
     rts
@@ -249,5 +288,26 @@ read_port:
     staa    i2cstore 
     rts
 
-*swi                                                 ; end program
+*******************************************************************************
+*           TEMPERATURE CONVERSION FROM ITG-3200 DATASHEET
+*           temp_high and temp_low have to be consequetive bytes
+*           There is probably some storage on X that needs to be done in order
+*           to use this in a loop.
+*******************************************************************************
+    ORG     $3500
+temp_convert:
+    ldd     temp_high                           ; load D with the temperature
+    eora    #$ff                                ; it is a twos compliment negative number
+    eorb    #$ff                                ; swap the upper and lower bytes (no EORD instr.)
+    addd    #$01                                ; increment by one to complete conversion
+    ldx     #280                                ; load decimal 280 into the denominator
+    idiv                                        ; divide the temperature by 280
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #82                                 ; subtract the linear constant
+    subd    tmp                                 ; 82 - tmp
+    std     temp_result
+    swi
 
+bin2bcd
