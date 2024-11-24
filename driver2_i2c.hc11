@@ -341,11 +341,14 @@ temp_convert:
 * there are also probably a bunch of different edge cases
 * for sure this one only works if the thing is negative, if it works at all
 
-    ldaa    conv_res+2                          ; we can only fit the top byte of the decimal, without having a dedicated place in memory
+    ldab    conv_res+2                          ; we can only fit the top byte of the decimal, without having a dedicated place in memory
+    ldaa    #0
     eora    #$ff                                ; flip every bit
     adda    #1                                  ; add 1 to convert the decimal part to its positive magnitude
-    ldab    #1                                ; we multiply that top byte by 100
-    mul                                         ; dont forget to actually multiply it!
+*    mul                                         ; dont forget to actually multiply it!
+    ldx     #10
+    idiv                                        ; divide by 10 to get the place value correct
+    xgdx                                        ; QUOTIENT IS IN X, so put it in D
     std     tmp                                 ; we're kinda committing to using D here
 
     ldaa    conv_res+1                          ; only A should be full after the division operation for the expected range of temperatures 
