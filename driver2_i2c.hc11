@@ -40,6 +40,7 @@ remainder   EQU         $2302           ; spot for the remainder
 tmp         EQU         $2600           ; scratch space for math operations
 
 conv_res    EQU         $2240           ; spot to store the conversion to human readable
+store       EQU         $2990           ; place to store the bin2bcd 
 
 *******************************************************************************
 *       SEND BYTE SUBROUTINE
@@ -210,6 +211,27 @@ main_loop:
 
     jsr     $ffc4           ; print a carriange return/linefeed
 
+
+* trying to print the conversions
+    jsr     temp_convert
+    jsr     bin2bcd
+
+    ldaa    $2991           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
+
+    ldaa    $2992           ; output second neumberature digit
+    jsr     $ffb5
+
+    ldaa    #$2e            ; output decimal point
+    jsr     $ffb8
+
+    ldaa    $2993
+    jsr     $ffb5
+    ldaa    $2994
+    jsr     $ffb5
+
+    jsr     $ffc4           ; print a carriange return/linefeed
+
     bra     main_init
 
 
@@ -333,6 +355,12 @@ temp_convert:
     subd    tmp+2
     std     conv_res+2                          ; store the decimal part 
 
+    rola
+    bcs     if_neg
+    bcc     if_pos
+    
+    
+
 
 * there is no way this works on the first try
 * if the small part is negative... subtract it...
@@ -342,6 +370,8 @@ temp_convert:
 * there are also probably a bunch of different edge cases
 * for sure this one only works if the thing is negative, if it works at all
 
+if_neg:
+    rora                                        ; we checked the MSB, now get it back from the carry flag
     ldab    conv_res+2                          ; we can only fit the top byte of the decimal, without having a dedicated place in memory
     ldaa    #0                                  ; even so, since we are using D, we have to form the byte correctly
     eora    #$ff                                ; flip every bit
@@ -356,7 +386,57 @@ temp_convert:
     mul                                         ; execute multiplication
     subd    tmp                                 ; subtract the quotient from earlier
     std     $2260                               ; :prayge:
+    bra     math_done
+
+if_pos:
+    rora                                        ; we checked the MSB, now get it back from the carry flag
+    ldab    conv_res+2                          ; we can only fit the top byte of the decimal, without having a dedicated place in memory
+    ldaa    #0                                  ; even so, since we are using D, we have to form the byte correctly
+    eora    #$ff                                ; flip every bit
+    adda    #1                                  ; add 1 to convert the decimal part to its positive magnitude
+    ldx     #10                                 ; get ready to divide by 10
+    idiv                                        ; divide by 10 to get the place value correct
+    xgdx                                        ; QUOTIENT IS IN X, so put it in D
+    std     tmp                                 ; we're kinda committing to using D here
+
+    ldaa    conv_res+1                          ; only A should be full after the division operation for the expected range of temperatures 
+    ldab    #100                                ; multiply this by 100
+    mul                                         ; execute multiplication
+    addd    tmp                                 ; add the quotient from earlier (we are in the positive case)
+    std     $2260                               ; :prayge:
+    bra     math_done
 
 
+math_done:
+    rts
+*******************************************************************************
+*       BIN2BCD
+*******************************************************************************
+bin2bcd:
+        ldd     $2260
+        ldx     #10000
+        idiv    
+        xgdx
+        stab    store
+        xgdx
 
-    swi
+        ldx     #1000
+        idiv
+        xgdx
+        stab    store+1
+        xgdx
+
+        ldx     #100
+        idiv
+        xgdx
+        stab    store+2
+        xgdx
+
+        ldx     #10
+        idiv
+        xgdx
+        stab    store+3
+        xgdx
+
+        stab    store+4
+        rts
