@@ -13,10 +13,10 @@ register    EQU         $2008          ; where we will save the acknack
 
 
 
-gyro_write  EQU         %11010000      ; i think? 
-gyro_read   EQU         %11010001      ; i think? 
-gyro_nack   EQU         %11110000
-gyro_whoami EQU         %00000000       ; whoami register 
+gyro_write  EQU         %11010000      ; itg3200 write addr 
+gyro_read   EQU         %11010001      ; itg3200 read addr
+gyro_nack   EQU         %11110000      ; test address 
+gyro_whoami EQU         %00000000      ; whoami register 
 bmp085      EQU         %11101110      ; bmp085 address
 
 ; OR these to turn that bit off
@@ -140,16 +140,16 @@ i2cmain:
     jsr     sb                      ; send byte
     jsr     ack_nack                
 
-    ldaa    register                    ; Register Address (RA)
+    ldaa    register                ; Register Address (RA)
     staa    send_buffer
     jsr     sb    
     jsr     ack_nack                ; ACK
 
     jsr     start_condition         ; S
 
-    ldaa    #$00                    ; indicate that we sending
-    staa    rcv_flag                ; i'm not sure if this is used right now
-    jsr     start_condition         ; requires SCL to be left high by the previous routine
+*    ldaa    #$00                    ; indicate that we sending
+*    staa    rcv_flag                ; i'm not sure if this is used right now
+*    jsr     start_condition         ; requires SCL to be left high by the previous routine
     ldaa    #gyro_read              ; ADR + R
     staa    send_buffer
     jsr     sb
