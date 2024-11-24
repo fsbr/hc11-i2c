@@ -306,6 +306,7 @@ read_port:
 *           to use this in a loop.
 *           Converts the temperature stores in temp_result to a value that can be 
 *           BIN2BCD'ed at $2260
+*           TODO: Implement the positive decimal case
 *******************************************************************************
     ORG     $3500
 temp_convert:
@@ -342,19 +343,18 @@ temp_convert:
 * for sure this one only works if the thing is negative, if it works at all
 
     ldab    conv_res+2                          ; we can only fit the top byte of the decimal, without having a dedicated place in memory
-    ldaa    #0
+    ldaa    #0                                  ; even so, since we are using D, we have to form the byte correctly
     eora    #$ff                                ; flip every bit
     adda    #1                                  ; add 1 to convert the decimal part to its positive magnitude
-*    mul                                         ; dont forget to actually multiply it!
-    ldx     #10
+    ldx     #10                                 ; get ready to divide by 10
     idiv                                        ; divide by 10 to get the place value correct
     xgdx                                        ; QUOTIENT IS IN X, so put it in D
     std     tmp                                 ; we're kinda committing to using D here
 
     ldaa    conv_res+1                          ; only A should be full after the division operation for the expected range of temperatures 
     ldab    #100                                ; multiply this by 100
-    mul
-    subd    tmp
+    mul                                         ; execute multiplication
+    subd    tmp                                 ; subtract the quotient from earlier
     std     $2260                               ; :prayge:
 
 
