@@ -238,7 +238,10 @@ main_loop:
     ldaa    $2994
     jsr     $ffb5
 
+*******************************************************************************
+
     jsr     $ffc4           ; print a carriange return/linefeed
+
 
     bra     main_init
 
@@ -338,34 +341,48 @@ read_port:
 ********************************************************************************
     ORG     $3500
 gyro_x_convert:
-    ldd     gyro_x_res                          ; load D with the gyro_x_result
-    rora                                        ; check if its a 2s compliment negagive
-    bcs     twos_comp                           ; if its a twos compliment.... convert and subtract 
-    bcc     skip                                ; otherwise dont convert and add. 
-twos_comp:
-    rola
-    eora    #$ff                                ; we assume it is a twos compliment negative number, but in reality we have to check. 
-    eorb    #$ff                                ; swap the upper and lower bytes (no EORD instr.)
-    addd    #$01                                ; increment by one to complete conversion
+    ldaa    temp_result+4                       ; load D with the gyro_x_result
+    ldab    temp_result+6                        ; not sure why this is offset it happening
 
-    ldx     #14                                 ; load decimal 280 into the denominator
-    idiv                                        ; divide the temperature by 280
+    rola                                        ; check if the number is negative
+    bcs     gx_is_neg                           ; check the msb for a 1
+    bcc     gx_is_pos                           ; branch to positive if the msb is a 0, negative if a 1
+
+gx_is_neg:
+    rora
+    eora    #$ff
+    eorb    #$ff
+    addd    #1
+
+    ldx     #14                                 ; load decimal 14 into the denominator
+    idiv                                        ; divide the gyro x by 14
     std     remainder                           ; store the remainder
     xgdx                                        ; the quotient gets put into X   this part works     this part works
-    std     tmp                                 ; temporarily store d in the temporary scratch space
-    ldd     #20                                 ; subtract the linear constant
-    subd    tmp                                 ; 20 - tmp
-    std     conv_res                            ; store at $2240  
-    bra     decimal
-skip:
-    ldx     #14                                 ; load decimal 280 into the denominator
-    idiv                                        ; divide the temperature by 280
-    std     remainder                           ; store the remainder
-    xgdx                                        ; the quotient gets put into X   this part works     this part works
+
+    subd    #1                                  ; convert back to twos compliment for addition part
+    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
+    eorb    #$ff                                ; A and B registers together form the D register
     std     tmp                                 ; temporarily store d in the temporary scratch space
     ldd     #20                                 ; subtract the linear constant
     addd    tmp                                 ; 20 + tmp
     std     conv_res                            ; store at $2240  
+
+    bra     decimal
+
+gx_is_pos:
+    rola
+
+    ldx     #14                                 ; load decimal 14 into the denominator
+    idiv                                        ; divide the gyro x by 14
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    addd    tmp                                 ; 20 + tmp
+    std     conv_res                            ; store at $2240  
+    bra     decimal
+
    
 *   swi                                         ; sometimes SWI'ing here is nice for debugging
 decimal:
