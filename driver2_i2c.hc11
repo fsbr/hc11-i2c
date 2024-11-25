@@ -212,7 +212,9 @@ main_loop:
     jsr     $ffc4           ; print a carriange return/linefeed
 
 
-* trying to print the conversions
+*******************************************************************************
+*       Area where we print the conversions to the display
+*******************************************************************************
     jsr     temp_convert
     jsr     bin2bcd
 
@@ -322,7 +324,15 @@ read_port:
     rts
 
 *******************************************************************************
+*           GYRO CONVERSION FROM ITG-3200 DATASHEET
+*           Converts raw 2s compliment hex to a form which can be bin2bcd'ed for
+*           printing to the screen
+********************************************************************************
+
+*******************************************************************************
 *           TEMPERATURE CONVERSION FROM ITG-3200 DATASHEET
+*           Converts raw 2s compliment hexadecimal to a form which can be
+*           Bin2BCD'ed for printing to the screen. 
 *           temp_high and temp_low have to be consequetive bytes
 *           There is probably some storage on X that needs to be done in order
 *           to use this in a loop.
