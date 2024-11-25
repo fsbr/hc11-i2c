@@ -218,30 +218,21 @@ main_loop:
 *       Area where we print the conversions to the display
 *******************************************************************************
 
-*******************************************************************************
-*       PRINT TEMPERATURE CONVERSION
-*******************************************************************************
-    jsr     temp_convert
-    jsr     bin2bcd
+    jsr     print_temp
+    jsr     prgyro_x
+    jsr	    prgyro_y
+    jsr	    prgyro_z
 
-    ldaa    $2991           ; output first temperature digit 
-    jsr     $ffb5           ; right nibble and out
 
-    ldaa    $2992           ; output second numerator digit
-    jsr     $ffb5
 
-    ldaa    #$2e            ; output decimal point
-    jsr     $ffb8
 
-    ldaa    $2993
-    jsr     $ffb5
-    ldaa    $2994
-    jsr     $ffb5
+
 
 *******************************************************************************
-
-    jsr     $ffc4           ; print a carriange return/linefeed
-
+*       FINISHED PRINTING THAT LINE
+*******************************************************************************
+    jsr     $ffc4           ; print a carriage return/linefeed
+    jsr     $ffc4           ; print a carriage return/linefeed
 
     bra     main_init
 
@@ -333,7 +324,7 @@ read_port:
     rts
 
 *******************************************************************************
-*           GYRO CONVERSION FROM ITG-3200 DATASHEET
+*           GYRO CONVERSIONS (X,Y,Z) FROM ITG-3200 DATASHEET
 *           Converts raw 2s compliment hex to a form which can be bin2bcd'ed for
 *           printing to the screen
 *           There is a lot of repeat code here, because I'm focused on finishing the project
@@ -367,7 +358,7 @@ gx_is_neg:
     addd    tmp                                 ; 20 + tmp
     std     conv_res                            ; store at $2240  
 
-    bra     decimal
+    bra     decimx
 
 gx_is_pos:
     rola
@@ -381,11 +372,11 @@ gx_is_pos:
     ldd     #20                                 ; subtract the linear constant
     addd    tmp                                 ; 20 + tmp
     std     conv_res                            ; store at $2240  
-    bra     decimal
+    bra     decimx
 
    
 *   swi                                         ; sometimes SWI'ing here is nice for debugging
-decimal:
+decimx:
     ldd     remainder                           ; load the remainder from before
     ldx     #20                                ; load decimal 20 into the denominator
     fdiv                                        ; floating point divide
@@ -397,8 +388,126 @@ decimal:
 
     ldd     conv_res
     std     $2260
-    swi
+    rts
 
+* Gyro Y
+gyro_y_convert:
+    ldaa    temp_result+8                       ; load D with the gyro_x_result
+    ldab    temp_result+10                        ; not sure why this is offset it happening
+
+    rola                                        ; check if the number is negative
+    bcs     gy_is_neg                           ; check the msb for a 1
+    bcc     gy_is_pos                           ; branch to positive if the msb is a 0, negative if a 1
+
+gy_is_neg:
+    rora
+    eora    #$ff
+    eorb    #$ff
+    addd    #1
+
+    ldx     #14                                 ; load decimal 14 into the denominator
+    idiv                                        ; divide the gyro x by 14
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+
+    subd    #1                                  ; convert back to twos compliment for addition part
+    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
+    eorb    #$ff                                ; A and B registers together form the D register
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    addd    tmp                                 ; 20 + tmp
+    std     conv_res                            ; store at $2240  
+
+    bra     decimy
+
+gy_is_pos:
+    rola
+
+    ldx     #14                                 ; load decimal 14 into the denominator
+    idiv                                        ; divide the gyro x by 14
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    addd    tmp                                 ; 20 + tmp
+    std     conv_res                            ; store at $2240  
+    bra     decimy
+
+   
+*   swi                                         ; sometimes SWI'ing here is nice for debugging
+decimy:
+    ldd     remainder                           ; load the remainder from before
+    ldx     #20                                ; load decimal 20 into the denominator
+    fdiv                                        ; floating point divide
+    xgdx                                        ; the quotient gets put into X 
+    std     tmp+2                               ; temporary spot for the "decimalized" remainder
+    ldd     #14
+    subd    tmp+2
+    std     conv_res+2                          ; store the decimal part 
+
+    ldd     conv_res
+    std     $2260
+    rts
+* Gyro Z
+gyro_z_convert:
+    ldaa    temp_result+12                      ; load D with the gyro_x_result
+    ldab    temp_result+14                      ; not sure why this is offset it happening
+
+    rola                                        ; check if the number is negative
+    bcs     gy_is_neg                           ; check the msb for a 1
+    bcc     gy_is_pos                           ; branch to positive if the msb is a 0, negative if a 1
+
+gz_is_neg:
+    rora
+    eora    #$ff
+    eorb    #$ff
+    addd    #1
+
+    ldx     #14                                 ; load decimal 14 into the denominator
+    idiv                                        ; divide the gyro x by 14
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+
+    subd    #1                                  ; convert back to twos compliment for addition part
+    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
+    eorb    #$ff                                ; A and B registers together form the D register
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    addd    tmp                                 ; 20 + tmp
+    std     conv_res                            ; store at $2240  
+
+    bra     decimz
+
+gz_is_pos:
+    rola
+
+    ldx     #14                                 ; load decimal 14 into the denominator
+    idiv                                        ; divide the gyro x by 14
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    addd    tmp                                 ; 20 + tmp
+    std     conv_res                            ; store at $2240  
+    bra     decimz
+
+   
+*   swi                                         ; sometimes SWI'ing here is nice for debugging
+decimz:
+    ldd     remainder                           ; load the remainder from before
+    ldx     #20                                ; load decimal 20 into the denominator
+    fdiv                                        ; floating point divide
+    xgdx                                        ; the quotient gets put into X 
+    std     tmp+2                               ; temporary spot for the "decimalized" remainder
+    ldd     #14
+    subd    tmp+2
+    std     conv_res+2                          ; store the decimal part 
+
+    ldd     conv_res
+    std     $2260
+    rts
 *******************************************************************************
 *           TEMPERATURE CONVERSION FROM ITG-3200 DATASHEET
 *           Converts raw 2s compliment hexadecimal to a form which can be
@@ -521,4 +630,95 @@ bin2bcd:
     xgdx
 
     stab    store+4
+    rts
+
+
+*******************************************************************************
+*       PRINT TEMPERATURE CONVERSION
+*******************************************************************************
+print_temp:
+    jsr     temp_convert
+    jsr     bin2bcd
+
+    ldaa    $2991           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
+
+    ldaa    $2992           ; output second numerator digit
+    jsr     $ffb5
+
+    ldaa    #$2e            ; output decimal point
+    jsr     $ffb8
+
+    ldaa    $2993           ; output third temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    $2994           ; output fourth temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    #$7c            ; output vertical bar
+    jsr     $ffb8           ; output character utility subroutine
+    rts
+
+*******************************************************************************
+*       PRINT GYRO X CONVERSION
+*******************************************************************************
+prgyro_x:
+    jsr     gyro_x_convert
+    jsr     bin2bcd
+
+    ldaa    $2991           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
+
+    ldaa    $2992           ; output second numerator digit
+    jsr     $ffb5
+
+    ldaa    $2993           ; output third temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    $2994           ; output fourth temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    #$7c            ; output vertical bar
+    jsr     $ffb8           ; output character utility subroutine
+    rts
+*******************************************************************************
+*       PRINT GYRO Y CONVERSION
+*******************************************************************************
+prgyro_y:
+    jsr     gyro_y_convert
+    jsr     bin2bcd
+
+    ldaa    $2991           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
+
+    ldaa    $2992           ; output second numerator digit
+    jsr     $ffb5
+
+    ldaa    $2993           ; output third temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    $2994           ; output fourth temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    #$7c            ; output vertical bar
+    jsr     $ffb8           ; output character utility subroutine
+    rts
+*******************************************************************************
+*       PRINT GYRO Z CONVERSION
+*******************************************************************************
+prgyro_z:
+    jsr     gyro_z_convert
+    jsr     bin2bcd
+
+    ldaa    $2991           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
+
+    ldaa    $2992           ; output second numerator digit
+    jsr     $ffb5
+
+    ldaa    $2993           ; output third temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
+
+    ldaa    $2994           ; output fourth temperature digit
+    jsr     $ffb5           ; right nibble convert and print out
     rts
