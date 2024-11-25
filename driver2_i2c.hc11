@@ -31,16 +31,18 @@ sclm        EQU        $DF              ; inverted bitmask for SCL
         ; testing if my method works at all
 i2cstore    EQU        $2000            ; where I want to keep my i2c data
 
-temp_high   EQU         $2010           ; High byte of temperature
-temp_low    EQU         $2011           ; Low Byte of the temperature
 
+* HEX OUTPUT OF SENSOR LOCATION
 temp_result EQU         $2200           ; (2 bytes) spot for the temperature result
-temp_dec    EQU         $2202           ; (2 bytes) spot for the temperature decimal
+gyro_x_res  EQU         $2202           ; (2 bytes) spot for the gyro_x result 
+gyro_y_res  EQU         $2204           ; (2 bytes) spot for the temperature decimal
+gyro_z_res  EQU         $2206           ; (2 bytes) spot for the temperature decimal
 remainder   EQU         $2302           ; spot for the remainder
 tmp         EQU         $2600           ; scratch space for math operations
 
 conv_res    EQU         $2240           ; spot to store the conversion to human readable
 store       EQU         $2990           ; place to store the bin2bcd 
+is_twos     EQU         $2292           ; place to store if it is a twos compliment number
 
 *******************************************************************************
 *       SEND BYTE SUBROUTINE
@@ -169,7 +171,7 @@ i2cmain:
 *******************************************************************************
 
 *******************************************************************************
-*       ENTRY POINT OF PROGRAM
+*       ENTRY POINT OF PROGRAM (DRIVER LOOP)
 *******************************************************************************
     ORG     $3400
 main_init:
@@ -186,10 +188,10 @@ main_init:
 main_loop:
     jsr     i2cmain         ; call the i2c driver
 
-    ldx     $39fe          ; load the address
+    ldx     $39fe           ; load the address
 
     ldaa    i2cstore        ; take the data from the temporary i2cstore
-    staa    0, x          ; store the i2c store data in the temp_high locaiton + x
+    staa    0, x            ; store the i2c store data in the temp_result locaiton + x
 
     jsr     $ffbb           ; print the character
 
@@ -215,13 +217,17 @@ main_loop:
 *******************************************************************************
 *       Area where we print the conversions to the display
 *******************************************************************************
+
+*******************************************************************************
+*       PRINT TEMPERATURE CONVERSION
+*******************************************************************************
     jsr     temp_convert
     jsr     bin2bcd
 
     ldaa    $2991           ; output first temperature digit 
     jsr     $ffb5           ; right nibble and out
 
-    ldaa    $2992           ; output second neumberature digit
+    ldaa    $2992           ; output second numerator digit
     jsr     $ffb5
 
     ldaa    #$2e            ; output decimal point
@@ -327,7 +333,54 @@ read_port:
 *           GYRO CONVERSION FROM ITG-3200 DATASHEET
 *           Converts raw 2s compliment hex to a form which can be bin2bcd'ed for
 *           printing to the screen
+*           There is a lot of repeat code here, because I'm focused on finishing the project
+*           Let's see if I grow to regret that in the future.
 ********************************************************************************
+    ORG     $3500
+gyro_x_convert:
+    ldd     gyro_x_res                          ; load D with the gyro_x_result
+    rora                                        ; check if its a 2s compliment negagive
+    bcs     twos_comp                           ; if its a twos compliment.... convert and subtract 
+    bcc     skip                                ; otherwise dont convert and add. 
+twos_comp:
+    rola
+    eora    #$ff                                ; we assume it is a twos compliment negative number, but in reality we have to check. 
+    eorb    #$ff                                ; swap the upper and lower bytes (no EORD instr.)
+    addd    #$01                                ; increment by one to complete conversion
+
+    ldx     #14                                 ; load decimal 280 into the denominator
+    idiv                                        ; divide the temperature by 280
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    subd    tmp                                 ; 20 - tmp
+    std     conv_res                            ; store at $2240  
+    bra     decimal
+skip:
+    ldx     #14                                 ; load decimal 280 into the denominator
+    idiv                                        ; divide the temperature by 280
+    std     remainder                           ; store the remainder
+    xgdx                                        ; the quotient gets put into X   this part works     this part works
+    std     tmp                                 ; temporarily store d in the temporary scratch space
+    ldd     #20                                 ; subtract the linear constant
+    addd    tmp                                 ; 20 + tmp
+    std     conv_res                            ; store at $2240  
+   
+*   swi                                         ; sometimes SWI'ing here is nice for debugging
+decimal:
+    ldd     remainder                           ; load the remainder from before
+    ldx     #20                                ; load decimal 20 into the denominator
+    fdiv                                        ; floating point divide
+    xgdx                                        ; the quotient gets put into X 
+    std     tmp+2                               ; temporary spot for the "decimalized" remainder
+    ldd     #14
+    subd    tmp+2
+    std     conv_res+2                          ; store the decimal part 
+
+    ldd     conv_res
+    std     $2260
+    swi
 
 *******************************************************************************
 *           TEMPERATURE CONVERSION FROM ITG-3200 DATASHEET
@@ -340,9 +393,10 @@ read_port:
 *           BIN2BCD'ed at $2260
 *           TODO: Implement the positive decimal case
 *******************************************************************************
-    ORG     $3500
+*   ORG     $3500                               ; commenting out for now to impelment gyro code
 temp_convert:
-    ldd     temp_result                         ; load D with the temperature (usually $2010)
+    ldaa    temp_result                         ; load D with the temperature (usually $2010)
+    ldab    temp_result+2                       ; dont you hate when you wake up and your code is arranging the data every other byte now, and you cant figure out why
     eora    #$ff                                ; it is a twos compliment negative number
     eorb    #$ff                                ; swap the upper and lower bytes (no EORD instr.)
     addd    #$01                                ; increment by one to complete conversion
@@ -422,31 +476,32 @@ math_done:
 *******************************************************************************
 *       BIN2BCD
 *******************************************************************************
+    ORG     $3700
 bin2bcd:
-        ldd     $2260
-        ldx     #10000
-        idiv    
-        xgdx
-        stab    store
-        xgdx
+    ldd     $2260
+    ldx     #10000
+    idiv    
+    xgdx
+    stab    store
+    xgdx
 
-        ldx     #1000
-        idiv
-        xgdx
-        stab    store+1
-        xgdx
+    ldx     #1000
+    idiv
+    xgdx
+    stab    store+1
+    xgdx
 
-        ldx     #100
-        idiv
-        xgdx
-        stab    store+2
-        xgdx
+    ldx     #100
+    idiv
+    xgdx
+    stab    store+2
+    xgdx
 
-        ldx     #10
-        idiv
-        xgdx
-        stab    store+3
-        xgdx
+    ldx     #10
+    idiv
+    xgdx
+    stab    store+3
+    xgdx
 
-        stab    store+4
-        rts
+    stab    store+4
+    rts
