@@ -42,7 +42,7 @@ tmp         EQU         $2600           ; scratch space for math operations
 
 conv_res    EQU         $2240           ; spot to store the conversion to human readable
 store       EQU         $2990           ; place to store the bin2bcd 
-is_twos     EQU         $2292           ; place to store if it is a twos compliment number
+negflag     EQU         $2292           ; place to store if it is a twos compliment number
 
 *******************************************************************************
 *       SEND BYTE SUBROUTINE
@@ -332,36 +332,49 @@ read_port:
 ********************************************************************************
     ORG     $3500
 gyro_x_convert:
+    ldaa    #00                                 ; set the negflag to zero to start
+    staa    negflag                             ; (this way it has a known value)
+
     ldaa    temp_result+4                       ; load D with the gyro_x_result
-    ldab    temp_result+6                        ; not sure why this is offset it happening
+    ldab    temp_result+6                       ; not sure why this is offset it happening
 
     rola                                        ; check if the number is negative
     bcs     gx_is_neg                           ; check the msb for a 1
     bcc     gx_is_pos                           ; branch to positive if the msb is a 0, negative if a 1
 
 gx_is_neg:
-    rora
+     
+    rora                                        ; get our initial bit back
+    std     tmp                                 ; put the number we are working with away really quick
+    ldaa    #01                                 ; put a 1 in the LSB of negflag
+    staa    negflag                             ; to let us know it is negative.
+    ldd     tmp
+*   swi    
+
     eora    #$ff
     eorb    #$ff
     addd    #1
+*   swi
 
     ldx     #14                                 ; load decimal 14 into the denominator
     idiv                                        ; divide the gyro x by 14
     std     remainder                           ; store the remainder
     xgdx                                        ; the quotient gets put into X   this part works     this part works
 
-    subd    #1                                  ; convert back to twos compliment for addition part
-    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
-    eorb    #$ff                                ; A and B registers together form the D register
+*    subd    #1                                  ; convert back to twos compliment for addition part
+*    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
+*    eorb    #$ff                                ; A and B registers together form the D register
     std     tmp                                 ; temporarily store d in the temporary scratch space
-    ldd     #20                                 ; subtract the linear constant
-    addd    tmp                                 ; 20 + tmp
+*   swi
+*    ldd     #20                                 ; subtract the linear constant
+    subd    #20                                 ; 20 + tmp
     std     conv_res                            ; store at $2240  
+*   swi
 
     bra     decimx
 
 gx_is_pos:
-    rola
+    rora
 
     ldx     #14                                 ; load decimal 14 into the denominator
     idiv                                        ; divide the gyro x by 14
@@ -421,7 +434,7 @@ gy_is_neg:
     bra     decimy
 
 gy_is_pos:
-    rola
+    rora
 
     ldx     #14                                 ; load decimal 14 into the denominator
     idiv                                        ; divide the gyro x by 14
@@ -480,7 +493,7 @@ gz_is_neg:
     bra     decimz
 
 gz_is_pos:
-    rola
+    rora
 
     ldx     #14                                 ; load decimal 14 into the denominator
     idiv                                        ; divide the gyro x by 14
@@ -604,30 +617,30 @@ math_done:
 *******************************************************************************
     ORG     $3700
 bin2bcd:
-    ldd     $2260
-    ldx     #10000
-    idiv    
-    xgdx
-    stab    store
-    xgdx
+    ldd     $2260           ; load the thing we want to convert to bcd
+    ldx     #10000          ; load 10k
+    idiv                    ; divide and get quot -> x rem -> d
+    xgdx                    ; put quot -> d
+    stab    store           ; store d at the first major digit
+    xgdx                    ; quot -> x, rem -> d
 
-    ldx     #1000
-    idiv
-    xgdx
-    stab    store+1
-    xgdx
+    ldx     #1000           ; load 1k
+    idiv                    ; divide at get quot - > x, rem -> d
+    xgdx                    ; put the quot -> d
+    stab    store+1         ; store d at the second major digit
+    xgdx                    ; take it back now yall, quot -> x rem -> d
 
-    ldx     #100
-    idiv
-    xgdx
-    stab    store+2
-    xgdx
+    ldx     #100            ; load 100
+    idiv                    ; divide to qet quot -> x, rem -> d
+    xgdx                    ; quot -> d
+    stab    store+2         ; store d at the third major digit
+    xgdx                    ; quot -> x, rem -> d
 
-    ldx     #10
-    idiv
-    xgdx
-    stab    store+3
-    xgdx
+    ldx     #10             ; load 10
+    idiv                    ; divide to get quot -> x , rem -> d
+    xgdx                    ; quot-> d, rem->x
+    stab    store+3         ; store quot at the third major digit
+    xgdx                    ; store remainder at the fourth major digit
 
     stab    store+4
     rts
@@ -666,6 +679,25 @@ prgyro_x:
     jsr     gyro_x_convert
     jsr     bin2bcd
 
+    ldaa    negflag         ; check if the value is negative
+    cmpa    #01             ; if it is
+    beq     print_min
+    bne     print_plus
+
+print_min:
+    ldaa    #$2d            ; ascii for - sign
+    jsr     $ffb8           ; output character utility subroutine
+    bra     digitsx         ; go to print the rest of the digits
+
+print_plus
+    ldaa    #$2b            ; ascii for + sign
+    jsr     $ffb8           ; output character utility subroutine
+    bra     digitsx         ; go to print the rest of the digits
+
+digitsx:
+    ldaa    $2990           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
+
     ldaa    $2991           ; output first temperature digit 
     jsr     $ffb5           ; right nibble and out
 
@@ -687,6 +719,23 @@ prgyro_x:
 prgyro_y:
     jsr     gyro_y_convert
     jsr     bin2bcd
+
+    ldaa    negflag         ; check if the value is negative
+    cmpa    #01             ; if it is
+    beq     min_y
+    bne     plus_y
+
+min_y:
+    ldaa    #$2d            ; ascii for - sign
+    jsr     $ffb8           ; output character utility subroutine
+    bra     digitsx         ; go to print the rest of the digits
+
+plus_y:
+    ldaa    #$2b            ; ascii for + sign
+    jsr     $ffb8           ; output character utility subroutine
+    bra     digitsy         ; go to print the rest of the digits
+
+digitsx:
 
     ldaa    $2991           ; output first temperature digit 
     jsr     $ffb5           ; right nibble and out
