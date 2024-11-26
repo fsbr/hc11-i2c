@@ -44,6 +44,10 @@ conv_res    EQU         $2240           ; spot to store the conversion to human 
 store       EQU         $2990           ; place to store the bin2bcd 
 negflag     EQU         $2292           ; place to store if it is a twos compliment number
 
+legend      FCC         'TEMP|GYRO_X|GYRO_Y|GYRO_Z'
+            FCB         $04
+
+
 *******************************************************************************
 *       SEND BYTE SUBROUTINE
 *******************************************************************************
@@ -211,6 +215,11 @@ main_loop:
     suba    #$08            ; number of iterations to stop after
     bne     main_loop       ; if we aren't at 0 keep going.
 
+*   jsr     $ffc4           ; print a carriange return/linefeed
+    
+    ldx    #legend
+    jsr     $ffc7
+
     jsr     $ffc4           ; print a carriange return/linefeed
 
 
@@ -349,12 +358,10 @@ gx_is_neg:
     ldaa    #01                                 ; put a 1 in the LSB of negflag
     staa    negflag                             ; to let us know it is negative.
     ldd     tmp
-*   swi    
 
     eora    #$ff
     eorb    #$ff
     addd    #1
-*   swi
 
     ldx     #14                                 ; load decimal 14 into the denominator
     idiv                                        ; divide the gyro x by 14
@@ -365,11 +372,15 @@ gx_is_neg:
 *    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
 *    eorb    #$ff                                ; A and B registers together form the D register
     std     tmp                                 ; temporarily store d in the temporary scratch space
-*   swi
 *    ldd     #20                                 ; subtract the linear constant
     subd    #20                                 ; 20 + tmp
+    bmi     errorx                              ; error x we have to flip the subtraction
+    bpl     scx
+errorx:
+    ldd     #0020
+    subd    tmp
+scx:
     std     conv_res                            ; store at $2240  
-*   swi
 
     bra     decimx
 
@@ -405,6 +416,9 @@ decimx:
 
 * Gyro Y
 gyro_y_convert:
+    ldaa    #00                                 ; set the negflag to zero to start
+    staa    negflag                             ; (this way it has a known value)
+
     ldaa    temp_result+8                       ; load D with the gyro_x_result
     ldab    temp_result+10                        ; not sure why this is offset it happening
 
@@ -413,7 +427,13 @@ gyro_y_convert:
     bcc     gy_is_pos                           ; branch to positive if the msb is a 0, negative if a 1
 
 gy_is_neg:
-    rora
+
+    rora                                        ; get our initial bit back
+    std     tmp
+    ldaa    #01
+    staa    negflag
+    ldd     tmp
+
     eora    #$ff
     eorb    #$ff
     addd    #1
@@ -423,12 +443,18 @@ gy_is_neg:
     std     remainder                           ; store the remainder
     xgdx                                        ; the quotient gets put into X   this part works     this part works
 
-    subd    #1                                  ; convert back to twos compliment for addition part
-    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
-    eorb    #$ff                                ; A and B registers together form the D register
+*    subd    #1                                  ; convert back to twos compliment for addition part
+*    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
+*    eorb    #$ff                                ; A and B registers together form the D register
     std     tmp                                 ; temporarily store d in the temporary scratch space
-    ldd     #20                                 ; subtract the linear constant
-    addd    tmp                                 ; 20 + tmp
+*    ldd     #20                                 ; subtract the linear constant
+    subd    #20                                 ; tmp - 20
+    bmi     errory                              ; error y (we have to flip the subtraction
+    bpl     scy
+errory:  
+    ldd     #0020                               ; 20 - tmp, since the original calculation led to a negative value
+    subd    tmp
+scy:
     std     conv_res                            ; store at $2240  
 
     bra     decimy
@@ -464,6 +490,9 @@ decimy:
     rts
 * Gyro Z
 gyro_z_convert:
+    ldaa    #00                                 ; set the negflag to zero to start
+    staa    negflag                             ; (this way it has a known value)
+
     ldaa    temp_result+12                      ; load D with the gyro_x_result
     ldab    temp_result+14                      ; not sure why this is offset it happening
 
@@ -472,7 +501,13 @@ gyro_z_convert:
     bcc     gy_is_pos                           ; branch to positive if the msb is a 0, negative if a 1
 
 gz_is_neg:
-    rora
+
+    rora                                        ; get our initial bit back
+    std     tmp                                 ; put the number we are working with a way rq
+    ldaa    #01                                 ; it is negative, so remember that
+    staa    negflag                             ; (put a 1 there to remind us)
+    ldd     tmp                                 ; get the original value we were working with back
+
     eora    #$ff
     eorb    #$ff
     addd    #1
@@ -482,12 +517,18 @@ gz_is_neg:
     std     remainder                           ; store the remainder
     xgdx                                        ; the quotient gets put into X   this part works     this part works
 
-    subd    #1                                  ; convert back to twos compliment for addition part
-    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
-    eorb    #$ff                                ; A and B registers together form the D register
+*    subd    #1                                  ; convert back to twos compliment for addition part
+*    eora    #$ff                                ; i'm just going backwards on the steps i did earlier
+*    eorb    #$ff                                ; A and B registers together form the D register
     std     tmp                                 ; temporarily store d in the temporary scratch space
-    ldd     #20                                 ; subtract the linear constant
-    addd    tmp                                 ; 20 + tmp
+*   ldd     #20                                 ; subtract the linear constant
+    subd    #20                                 ; tmp - 20 
+    bmi     errorz                              ; error z (have to flip the subtraction)
+    bpl     scz                                 ; store conversion Z
+errorz:
+    ldd     #0020                               ; 20 - tmp
+    subd    tmp
+scz:
     std     conv_res                            ; store at $2240  
 
     bra     decimz
@@ -728,14 +769,17 @@ prgyro_y:
 min_y:
     ldaa    #$2d            ; ascii for - sign
     jsr     $ffb8           ; output character utility subroutine
-    bra     digitsx         ; go to print the rest of the digits
+    bra     digitsy         ; go to print the rest of the digits
 
 plus_y:
     ldaa    #$2b            ; ascii for + sign
     jsr     $ffb8           ; output character utility subroutine
     bra     digitsy         ; go to print the rest of the digits
 
-digitsx:
+digitsy:
+
+    ldaa    $2990           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
 
     ldaa    $2991           ; output first temperature digit 
     jsr     $ffb5           ; right nibble and out
@@ -758,6 +802,25 @@ digitsx:
 prgyro_z:
     jsr     gyro_z_convert
     jsr     bin2bcd
+
+    ldaa    negflag         ; check if value is negative
+    cmpa    #01             ; branch if it is
+    beq     min_z
+    bne     plus_z
+
+min_z:
+    ldaa    #$2d            ; ascii for - sign
+    jsr     $ffb8           ; output character utility subroutine
+    bra     digitsz         ; go to print the rest of the digits
+
+plus_z:
+    ldaa    #$2b            ; ascii for + sign
+    jsr     $ffb8           ; output character utility subroutine
+    bra     digitsz         ; go to print the rest of the digits
+
+digitsz:
+    ldaa    $2990           ; output first temperature digit 
+    jsr     $ffb5           ; right nibble and out
 
     ldaa    $2991           ; output first temperature digit 
     jsr     $ffb5           ; right nibble and out
