@@ -6,10 +6,8 @@
 *******************************************************************************
 portd       EQU         $1008          ; port d data address
 ddrd        EQU         $1009          ; data direction register d
-send_buffer EQU         $2002
-rcv_buffer  EQU         $2006
-rcv_flag    EQU         $2007          ; if 0 = send, if 1 receive
-register    EQU         $2008          ; where we will save the acknack
+send_buffer EQU         $2002          ; location where we store the register address to send over 
+register    EQU         $2008          ; ITG-3200 Register Address Storage Locatoin
 
 
 
@@ -34,9 +32,6 @@ i2cstore    EQU        $2000            ; where I want to keep my i2c data
 
 * HEX OUTPUT OF SENSOR LOCATION
 temp_result EQU         $2200           ; (2 bytes) spot for the temperature result
-gyro_x_res  EQU         $2202           ; (2 bytes) spot for the gyro_x result 
-gyro_y_res  EQU         $2204           ; (2 bytes) spot for the temperature decimal
-gyro_z_res  EQU         $2206           ; (2 bytes) spot for the temperature decimal
 remainder   EQU         $2302           ; spot for the remainder
 tmp         EQU         $2600           ; scratch space for math operations
 
@@ -44,8 +39,9 @@ conv_res    EQU         $2240           ; spot to store the conversion to human 
 store       EQU         $2990           ; place to store the bin2bcd 
 negflag     EQU         $2292           ; place to store if it is a twos compliment number
 
-legend      FCC         'TEMP|GYRO_X|GYRO_Y|GYRO_Z'
-            FCB         $04
+    ORG     $1400
+legend      FCC         'TEMP|GYRO_X|GYRO_Y|GYRO_Z'     ; human readable string
+            FCB         $04                             ; end of string byte for the hc11
 
 
 *******************************************************************************
@@ -141,8 +137,6 @@ start_condition:
 i2cmain:
     ldaa    #$00                    ; initialize i2cstore to zero
     staa    i2cstore                ; ^^
-    ldaa    #$00                    ; rcv_flag = 0, means we are transmitting
-    staa    rcv_flag                ; rcv_flag = 1, means we are recieving data
     jsr     start_condition         ; send gyro write
 
     ldaa    #gyro_write             ; send the gyro write command on the bus
