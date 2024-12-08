@@ -26,12 +26,12 @@ GND (low side) : GND on HC11
 
 The inter integrated circuit (I2C) protocol is a relatively simple two wire serial interface between a master device, and one or more slave devices.  The EVBU and HC11 serve as the master device.  The slave device is the 10DOF IMU.  The 10DOF IMU and other I2C devices typically have four pins.  `Vin` and `Gnd` for powering the device.  `SCL` is the "serial clock line" and `SDA` is the "serial data line".   An I2C transaction is bounded by a "Start" and "Stop" condition, shown in the figure below. 
 
-![I2C protocol](/img/img1.png)
+![Start and Stop Conditions](/img/img1.png)
 
 The start condition is denoted in logic analyzer protocol decoders as "S".  It occurs when `SDA` goes from high to low, while `SCL` is high.  The stop condition is denoted as "P".  It occurs when `SDA` goes from low to high, whlie `SCL` is high.  This has the effect that data on the bus is only allowed to change while the clock line is low.  Otherwise, we would introduce unintended start and stop conditions.  The dotted lines in the middle of the diagram let us know that any state, other than the `S` or `P` states is possible during the transaction.  
 
 An example of a full communication transaction is shown in the figure below. I'll enumerate the different parts of the I2C transaction, then follow that by explaining what each part is or means.  The transaction is made up of the start condition, a 7 address bits address, a read/write bit,  and ACK or NACK bit, and 8 data bits, followed by another ACK or NACK.  By repeating this process, or slave device specific variations of it, data transfer is possible between the master and slave device.  
-![[Pasted image 20241125174315.png]]
+![Full I2C Process](/img/full_i2c.png)
 Start Condition
 
 | I2C Transation Part            |     Description                  |
@@ -45,7 +45,7 @@ Start Condition
 | Stop    | SDA transitions high while SCL is high, indicating the end of communication|
 
 For the ITG-3200, to read from the bus, the following process is used
-![[Pasted image 20241125192924.png]]
+![Single Byte Read Sequence](/img/sbrs.png)
 
 ### I2C Driver Addresses:
 The driver addresses used in my implementation are shown in the following table.  These are the values used in our implementation. 
