@@ -26,7 +26,7 @@ GND (low side) : GND on HC11
 
 The inter integrated circuit (I2C) protocol is a relatively simple two wire serial interface between a master device, and one or more slave devices.  The EVBU and HC11 serve as the master device.  The slave device is the 10DOF IMU.  The 10DOF IMU and other I2C devices typically have four pins.  `Vin` and `Gnd` for powering the device.  `SCL` is the "serial clock line" and `SDA` is the "serial data line".   An I2C transaction is bounded by a "Start" and "Stop" condition, shown in the figure below. 
 
-![[Pasted image 20241125173216.png]]
+![img/Pasted image 20241125173216.png]
 
 The start condition is denoted in logic analyzer protocol decoders as "S".  It occurs when `SDA` goes from high to low, while `SCL` is high.  The stop condition is denoted as "P".  It occurs when `SDA` goes from low to high, whlie `SCL` is high.  This has the effect that data on the bus is only allowed to change while the clock line is low.  Otherwise, we would introduce unintended start and stop conditions.  The dotted lines in the middle of the diagram let us know that any state, other than the `S` or `P` states is possible during the transaction.  
 
